@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线仓库管理系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">在线仓库管理系统</h1>
+        <div class="alert alert-info text-center">
+            <i class="fas fa-globe"></i> 这是一个在线版本，所有用户的数据实时同步
+        </div>
+
+        <div class="row">
+            <div class="col-md-3">
+                <div class="list-group">
+                    <a href="#" class="list-group-item list-group-item-action active" data-page="dashboard">仪表板</a>
+                    <a href="#" class="list-group-item list-group-item-action" data-page="inventory">库存管理</a>
+                    <a href="#" class="list-group-item list-group-item-action" data-page="borrow">借用管理</a>
+                    <a href="#" class="list-group-item list-group-item-action" data-page="settings">系统设置</a>
+                </div>
+            </div>
+
+            <div class="col-md-9">
+                <div id="dashboard" class="page-content">
+                    <h2>仪表板</h2>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="card text-white bg-primary mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">总物品数</h5>
+                                    <p class="card-text" id="totalItems">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-success mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">可借用</h5>
+                                    <p class="card-text" id="availableItems">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-danger mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">已借出</h5>
+                                    <p class="card-text" id="borrowedItems">0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-white bg-warning mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">维修中</h5>
+                                    <p class="card-text" id="maintenanceItems">0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="inventory" class="page-content" style="display: none;">
+                    <h2>库存管理</h2>
+                    <button class="btn btn-primary mb-3" onclick="showAddItemForm()">添加物品</button>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>编号</th>
+                                <th>名称</th>
+                                <th>分类</th>
+                                <th>数量</th>
+                                <th>位置</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryTable"></tbody>
+                    </table>
+                </div>
+
+                <div id="borrow" class="page-content" style="display: none;">
+                    <h2>借用管理</h2>
+                    <button class="btn btn-success mb-3" onclick="showBorrowForm()">新增借用</button>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>物品名称</th>
+                                <th>物品编号</th>
+                                <th>借用人</th>
+                                <th>借用日期</th>
+                                <th>预计归还</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="borrowTable"></tbody>
+                    </table>
+                </div>
+
+                <div id="settings" class="page-content" style="display: none;">
+                    <h2>系统设置</h2>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exclamation-triangle"></i> 在线版本的设置需要在数据库后台配置
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">当前组织名称</label>
+                                <input type="text" class="form-control" id="orgName" value="学生组织" disabled>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">默认借用期限（天）</label>
+                                <input type="number" class="form-control" id="defaultBorrowDays" value="7" disabled>
+                            </div>
+                            <div class="alert alert-info">
+                                联系管理员修改系统设置
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 注意：这里需要替换为实际的 Supabase 配置
+        const SUPABASE_URL = 'https://ofxngipxmvbazotiumxb.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_jr8idlWrH50NWdjaEM4ITQ_qVJEcp0c';
+
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let items = [];
+        let borrows = [];
+        let currentUser = '用户' + Math.floor(Math.random() * 1000); // 临时用户ID
+
+        document.addEventListener("DOMContentLoaded", function() {
+            document.getElementById("orgName").value = "学生组织";
+            document.getElementById("defaultBorrowDays").value = 7;
+
+            document.querySelectorAll("[data-page]").forEach(link => {
+                link.addEventListener("click", function(e) {
+                    e.preventDefault();
+                    const page = this.getAttribute("data-page");
+                    switchPage(page);
+                });
+            });
+
+            // 加载数据并设置实时监听
+            loadData();
+            setupRealtimeSubscription();
+        });
+
+        async function loadData() {
+            try {
+                // 加载物品数据
+                const { data: itemsData, error: itemsError } = await supabase
+                    .from('items')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (itemsError) throw itemsError;
+                items = itemsData || [];
+
+                // 加载借用数据
+                const { data: borrowsData, error: borrowsError } = await supabase
+                    .from('borrows')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (borrowsError) throw borrowsError;
+                borrows = borrowsData || [];
+
+                renderDashboard();
+                renderInventory();
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                alert('加载数据失败，请检查网络连接');
+            }
+        }
+
+        function setupRealtimeSubscription() {
+            // 监听物品表的实时变化
+            supabase
+                .channel('items_changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'items' },
+                    (payload) => {
+                        console.log('物品数据变化:', payload);
+                        loadData(); // 重新加载数据
+                    }
+                )
+                .subscribe();
+
+            // 监听借用表的实时变化
+            supabase
+                .channel('borrows_changes')
+                .on('postgres_changes',
+                    { event: '*', schema: 'public', table: 'borrows' },
+                    (payload) => {
+                        console.log('借用数据变化:', payload);
+                        loadData(); // 重新加载数据
+                    }
+                )
+                .subscribe();
+        }
+
+        function switchPage(page) {
+            document.querySelectorAll(".page-content").forEach(content => {
+                content.style.display = "none";
+            });
+            document.getElementById(page).style.display = "block";
+
+            document.querySelectorAll(".list-group-item").forEach(item => {
+                item.classList.remove("active");
+            });
+            document.querySelector(`[data-page="${page}"]`).classList.add("active");
+
+            if (page === "dashboard") renderDashboard();
+            if (page === "inventory") renderInventory();
+            if (page === "borrow") renderBorrows();
+        }
+
+        function renderDashboard() {
+            const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+            const availableItems = items.filter(item => item.status === "可借用").reduce((sum, item) => sum + item.quantity, 0);
+            const borrowedItems = items.filter(item => item.status === "已借出").reduce((sum, item) => sum + item.quantity, 0);
+            const maintenanceItems = items.filter(item => item.status === "维修中").reduce((sum, item) => sum + item.quantity, 0);
+
+            document.getElementById("totalItems").textContent = totalItems;
+            document.getElementById("availableItems").textContent = availableItems;
+            document.getElementById("borrowedItems").textContent = borrowedItems;
+            document.getElementById("maintenanceItems").textContent = maintenanceItems;
+        }
+
+        function renderInventory() {
+            const tableBody = document.getElementById("inventoryTable");
+            tableBody.innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.code}</td>
+                    <td>${item.name}</td>
+                    <td><span class="badge ${item.category === "工具" ? "bg-primary" : "bg-success"}">${item.category}</span></td>
+                    <td>${item.quantity}</td>
+                    <td>${item.location}</td>
+                    <td><span class="badge ${getStatusBadgeClass(item.status)}">${item.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="editItem('${item.id}')">编辑</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteItem('${item.id}')">删除</button>
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        function getStatusBadgeClass(status) {
+            switch(status) {
+                case "可借用": return "bg-success";
+                case "已借出": return "bg-danger";
+                case "维修中": return "bg-warning text-dark";
+                default: return "bg-secondary";
+            }
+        }
+
+        function renderBorrows() {
+            const tableBody = document.getElementById("borrowTable");
+            tableBody.innerHTML = borrows.map(borrow => `
+                <tr>
+                    <td>${borrow.item_name}</td>
+                    <td>${borrow.item_code}</td>
+                    <td>${borrow.borrower}</td>
+                    <td>${borrow.borrow_date}</td>
+                    <td>${borrow.return_date}</td>
+                    <td><span class="badge ${borrow.status === "进行中" ? "bg-warning text-dark" : "bg-success"}">${borrow.status}</span></td>
+                    <td>
+                        ${borrow.status === "进行中" ? `<button class="btn btn-sm btn-success" onclick="showReturnForm('${borrow.id}')">归还</button>` : "已完成"}
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        async function showAddItemForm() {
+            const name = prompt("物品名称:");
+            if (!name) return;
+
+            const category = prompt("分类 (1.工具 2.材料):");
+            const categoryName = category === "1" ? "工具" : "材料";
+
+            const quantity = parseInt(prompt("物品数量:", "1"));
+            if (!quantity || quantity < 1) {
+                alert("数量无效");
+                return;
+            }
+
+            const location = prompt("存放位置:");
+            if (!location) return;
+
+            const code = prompt("物品编号:", "ITEM" + Date.now());
+            if (!code) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('items')
+                    .insert([
+                        {
+                            name: name.trim(),
+                            code: code.trim(),
+                            category: categoryName,
+                            quantity: quantity,
+                            location: location.trim(),
+                            status: "可借用",
+                            created_by: currentUser,
+                            created_at: new Date().toISOString()
+                        }
+                    ])
+                    .select();
+
+                if (error) throw error;
+
+                alert("物品添加成功！");
+                loadData(); // 重新加载数据
+            } catch (error) {
+                console.error('添加物品失败:', error);
+                alert("添加物品失败: " + error.message);
+            }
+        }
+
+        async function showBorrowForm() {
+            const availableItems = items.filter(item => item.status === "可借用");
+            if (availableItems.length === 0) {
+                alert("没有可借用的物品！");
+                return;
+            }
+
+            let itemList = "可借用物品:\n";
+            availableItems.forEach((item, index) => {
+                itemList += `${index + 1}. ${item.name} (${item.code})\n`;
+            });
+
+            const choice = prompt(itemList + "\n选择物品 (输入编号):");
+            const selectedItem = availableItems[parseInt(choice) - 1];
+            if (!selectedItem) {
+                alert("选择无效");
+                return;
+            }
+
+            const borrower = prompt("借用人姓名:");
+            if (!borrower) return;
+
+            const borrowDate = prompt("借用日期 (YYYY-MM-DD):", new Date().toISOString().split("T")[0]);
+            const returnDate = prompt("预计归还日期 (YYYY-MM-DD):", new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+
+            try {
+                // 添加借用记录
+                const { error: borrowError } = await supabase
+                    .from('borrows')
+                    .insert([
+                        {
+                            item_id: selectedItem.id,
+                            item_name: selectedItem.name,
+                            item_code: selectedItem.code,
+                            borrower: borrower.trim(),
+                            borrow_date: borrowDate,
+                            return_date: returnDate,
+                            status: "进行中",
+                            created_by: currentUser,
+                            created_at: new Date().toISOString()
+                        }
+                    ]);
+
+                if (borrowError) throw borrowError;
+
+                // 更新物品状态
+                const { error: updateError } = await supabase
+                    .from('items')
+                    .update({ status: "已借出" })
+                    .eq('id', selectedItem.id);
+
+                if (updateError) throw updateError;
+
+                alert("借用记录添加成功！");
+                loadData(); // 重新加载数据
+            } catch (error) {
+                console.error('添加借用记录失败:', error);
+                alert("添加借用记录失败: " + error.message);
+            }
+        }
+
+        async function showReturnForm(borrowId) {
+            const borrow = borrows.find(b => b.id === borrowId);
+            if (!borrow) return;
+
+            const item = items.find(i => i.id === borrow.item_id);
+            if (!item) return;
+
+            const returnLocation = prompt(`归还物品: ${item.name}\n请输入归还位置:`, item.location);
+            if (!returnLocation) return;
+
+            if (confirm(`确认归还物品 "${item.name}" 吗？`)) {
+                try {
+                    // 更新借用记录
+                    const { error: borrowError } = await supabase
+                        .from('borrows')
+                        .update({
+                            status: "已完成",
+                            actual_return_date: new Date().toISOString().split("T")[0]
+                        })
+                        .eq('id', borrowId);
+
+                    if (borrowError) throw borrowError;
+
+                    // 更新物品状态和位置
+                    const { error: updateError } = await supabase
+                        .from('items')
+                        .update({
+                            status: "可借用",
+                            location: returnLocation.trim()
+                        })
+                        .eq('id', item.id);
+
+                    if (updateError) throw updateError;
+
+                    alert("物品归还成功！");
+                    loadData(); // 重新加载数据
+                } catch (error) {
+                    console.error('归还物品失败:', error);
+                    alert("归还物品失败: " + error.message);
+                }
+            }
+        }
+
+        async function editItem(itemId) {
+            const item = items.find(i => i.id === itemId);
+            if (!item) return;
+
+            const newName = prompt("物品名称:", item.name);
+            if (newName) item.name = newName.trim();
+
+            const newQuantity = prompt("物品数量:", item.quantity);
+            if (newQuantity && parseInt(newQuantity) > 0) {
+                item.quantity = parseInt(newQuantity);
+            }
+
+            const newLocation = prompt("存放位置:", item.location);
+            if (newLocation) item.location = newLocation.trim();
+
+            try {
+                const { error } = await supabase
+                    .from('items')
+                    .update({
+                        name: item.name,
+                        quantity: item.quantity,
+                        location: item.location
+                    })
+                    .eq('id', itemId);
+
+                if (error) throw error;
+
+                alert("物品更新成功！");
+                loadData(); // 重新加载数据
+            } catch (error) {
+                console.error('更新物品失败:', error);
+                alert("更新物品失败: " + error.message);
+            }
+        }
+
+        async function deleteItem(itemId) {
+            if (confirm("确定要删除这个物品吗？")) {
+                try {
+                    const { error } = await supabase
+                        .from('items')
+                        .delete()
+                        .eq('id', itemId);
+
+                    if (error) throw error;
+
+                    alert("物品删除成功！");
+                    loadData(); // 重新加载数据
+                } catch (error) {
+                    console.error('删除物品失败:', error);
+                    alert("删除物品失败: " + error.message);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
